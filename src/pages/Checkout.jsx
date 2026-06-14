@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -16,10 +16,15 @@ import {
   QrCode,
   Lock,
   PartyPopper,
+  Loader2,
+  Zap,
+  CheckCircle2,
+  Mail,
 } from 'lucide-react'
 import Icon from '../components/Icon.jsx'
 import { useCart } from '../context/CartContext.jsx'
-import { cryptoMethods, inrMethod, formatUSD } from '../data/products.js'
+import { cryptoMethods, formatUSD } from '../data/products.js'
+import { loadPaymentSettings, updateOrderStatus } from '../data/settings.js'
 
 const USD_TO_INR = 83.4
 
@@ -30,24 +35,54 @@ export default function Checkout() {
   const { items, updateQty, removeItem, subtotal, clearCart } = useCart()
   const navigate = useNavigate()
 
-  const [step, setStep] = useState(1) // 1 = cart/info, 2 = payment, 3 = confirmation
+  // Payment configuration comes from the admin panel (with sane defaults).
+  const settings = useMemo(loadPaymentSettings, [])
+  const enabledCoins = useMemo(
+    () =>
+      cryptoMethods
+        .filter((c) => settings.coins[c.id]?.enabled)
+        .map((c) => ({ ...c, ...settings.coins[c.id] })),
+    [settings],
+  )
+
+  const [step, setStep] = useState(1) // 1 = details, 2 = payment, 3 = confirmation
   const [email, setEmail] = useState('')
   const [discord, setDiscord] = useState('')
   const [coupon, setCoupon] = useState('')
   const [appliedCoupon, setAppliedCoupon] = useState(null)
-  const [payType, setPayType] = useState('crypto') // 'crypto' | 'inr'
-  const [coin, setCoin] = useState('btc')
+  const [payType, setPayType] = useState('crypto')
+  const [coin, setCoin] = useState(enabledCoins[0]?.id || 'btc')
   const [copied, setCopied] = useState('')
   const [txid, setTxid] = useState('')
-  const [orderId, setOrderId] = useState('')
+  const [order, setOrder] = useState(null)
+  const [confirmations, setConfirmations] = useState(0)
 
-  const discount = appliedCoupon ? subtotal * appliedCoupon.pct : 0
-  const fee = payType === 'crypto' ? 0 : subtotal * 0.0 // no fee in demo
-  const total = Math.max(0, subtotal - discount + fee)
+  const discount = appliedCoupon && !appliedCoupon.invalid ? subtotal * appliedCoupon.pct : 0
+  const total = Math.max(0, subtotal - discount)
   const totalINR = useMemo(() => Math.round(total * USD_TO_INR), [total])
 
-  const activeCoin = cryptoMethods.find((c) => c.id === coin)
-  const coinAmount = activeCoin ? (total / RATES[coin]).toFixed(coin === 'usdt' ? 2 : 6) : '0'
+  const activeCoin = enabledCoins.find((c) => c.id === coin) || enabledCoins[0]
+  const coinAmount = activeCoin ? (total / RATES[activeCoin.id]).toFixed(activeCoin.id === 'usdt' ? 2 : 6) : '0'
+
+  // Drive simulated on-chain confirmations for auto-processed crypto orders.
+  const tickRef = useRef(null)
+  useEffect(() => {
+    if (step !== 3 || !order || order.status !== 'confirming') return
+    const required = Math.max(1, settings.confirmationsRequired)
+    const interval = Math.max(700, (settings.simulatedConfirmSeconds * 1000) / required)
+    let n = 0
+    tickRef.current = setInterval(() => {
+      n += 1
+      setConfirmations(n)
+      if (n >= required) {
+        clearInterval(tickRef.current)
+        updateOrderStatus(order.id, 'verified')
+        setOrder((o) => (o ? { ...o, status: 'verified' } : o))
+      }
+    }, interval)
+    return () => clearInterval(tickRef.current)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, order?.id])
 
   function applyCoupon() {
     const code = coupon.trim().toUpperCase()
@@ -65,27 +100,30 @@ export default function Checkout() {
   function placeOrder(e) {
     e.preventDefault()
     const id = 'NBL-' + Math.random().toString(36).slice(2, 8).toUpperCase()
-    setOrderId(id)
-    // Persist a pending order for the admin panel + verification page (demo only).
+    const auto = payType === 'crypto' && settings.autoConfirmCrypto
+    const newOrder = {
+      id,
+      email,
+      discord,
+      items: items.map((i) => ({ name: i.name, durationLabel: i.durationLabel, qty: i.qty, price: i.price })),
+      total,
+      totalINR,
+      method: payType === 'crypto' ? activeCoin.symbol : 'UPI / INR',
+      txid,
+      auto,
+      status: auto ? 'confirming' : 'pending',
+      createdAt: new Date().toISOString(),
+    }
     try {
       const orders = JSON.parse(localStorage.getItem('nebula-orders') || '[]')
-      orders.unshift({
-        id,
-        email,
-        discord,
-        items: items.map((i) => ({ name: i.name, durationLabel: i.durationLabel, qty: i.qty, price: i.price })),
-        total,
-        totalINR,
-        method: payType === 'crypto' ? activeCoin.symbol : 'UPI / INR',
-        txid,
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-      })
+      orders.unshift(newOrder)
       localStorage.setItem('nebula-orders', JSON.stringify(orders))
     } catch {
       /* ignore storage errors in demo */
     }
     clearCart()
+    setConfirmations(0)
+    setOrder(newOrder)
     setStep(3)
   }
 
@@ -104,36 +142,8 @@ export default function Checkout() {
   }
 
   // Confirmation
-  if (step === 3) {
-    return (
-      <div className="container-page py-20">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.96 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="mx-auto max-w-lg rounded-3xl border border-white/10 bg-gradient-to-br from-nebula-card/70 to-nebula-surface/30 p-10 text-center"
-        >
-          <span className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-gradient-to-br from-nebula-primary to-nebula-cyan shadow-glow">
-            <PartyPopper className="h-8 w-8 text-white" />
-          </span>
-          <h1 className="mt-6 font-display text-2xl font-bold">Order received!</h1>
-          <p className="mt-2 text-slate-400">
-            We've logged your payment and our team is verifying it now. You'll receive delivery on
-            {' '}<span className="text-white">{email || 'your email'}</span>.
-          </p>
-          <div className="mt-6 rounded-xl border border-white/10 bg-white/[0.03] p-4">
-            <p className="text-xs uppercase tracking-wide text-slate-500">Order ID</p>
-            <p className="font-display text-xl font-bold gradient-text">{orderId}</p>
-          </div>
-          <div className="mt-4 flex items-center justify-center gap-2 text-sm text-amber-300">
-            <Clock className="h-4 w-4" /> Manual verification: typically 5–15 minutes
-          </div>
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <Link to="/verify" className="btn-primary flex-1">Track / verify order</Link>
-            <Link to="/products" className="btn-ghost flex-1">Continue shopping</Link>
-          </div>
-        </motion.div>
-      </div>
-    )
+  if (step === 3 && order) {
+    return <Confirmation order={order} confirmations={confirmations} required={Math.max(1, settings.confirmationsRequired)} />
   }
 
   return (
@@ -223,7 +233,8 @@ export default function Checkout() {
                 </button>
                 <button
                   onClick={() => setPayType('inr')}
-                  className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold transition ${
+                  disabled={!settings.inr.enabled}
+                  className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold transition disabled:opacity-40 ${
                     payType === 'inr' ? 'border-nebula-primary bg-nebula-primary/10 text-white shadow-glow' : 'border-white/10 bg-white/[0.02] text-slate-300'
                   }`}
                 >
@@ -234,55 +245,66 @@ export default function Checkout() {
               <AnimatePresence mode="wait">
                 {payType === 'crypto' ? (
                   <motion.div key="crypto" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="mt-5">
-                    <div className="flex flex-wrap gap-2">
-                      {cryptoMethods.map((c) => (
-                        <button
-                          key={c.id}
-                          onClick={() => setCoin(c.id)}
-                          className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold transition ${
-                            coin === c.id ? 'border-transparent text-white shadow-glow' : 'border-white/10 bg-white/[0.02] text-slate-300'
-                          }`}
-                          style={coin === c.id ? { background: `${c.color}` } : undefined}
-                        >
-                          <span className="grid h-5 w-5 place-items-center rounded-full text-[10px] font-bold" style={{ background: coin === c.id ? 'rgba(255,255,255,0.2)' : `${c.color}33`, color: coin === c.id ? '#fff' : c.color }}>
-                            {c.symbol[0]}
-                          </span>
-                          {c.symbol}
-                        </button>
-                      ))}
-                    </div>
+                    {settings.autoConfirmCrypto && (
+                      <div className="mb-4 flex items-center gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-3 text-xs text-emerald-200/90">
+                        <Zap className="h-4 w-4 shrink-0" />
+                        <span><strong>Automatic processing</strong> — crypto payments are confirmed on-chain and delivered instantly, no manual review.</span>
+                      </div>
+                    )}
+                    {enabledCoins.length === 0 ? (
+                      <p className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-3 text-sm text-amber-200/90">No crypto methods are currently enabled. Please use UPI / INR.</p>
+                    ) : (
+                      <>
+                        <div className="flex flex-wrap gap-2">
+                          {enabledCoins.map((c) => (
+                            <button
+                              key={c.id}
+                              onClick={() => setCoin(c.id)}
+                              className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold transition ${
+                                coin === c.id ? 'border-transparent text-white shadow-glow' : 'border-white/10 bg-white/[0.02] text-slate-300'
+                              }`}
+                              style={coin === c.id ? { background: `${c.color}` } : undefined}
+                            >
+                              <span className="grid h-5 w-5 place-items-center rounded-full text-[10px] font-bold" style={{ background: coin === c.id ? 'rgba(255,255,255,0.2)' : `${c.color}33`, color: coin === c.id ? '#fff' : c.color }}>
+                                {c.symbol[0]}
+                              </span>
+                              {c.symbol}
+                            </button>
+                          ))}
+                        </div>
 
-                    <div className="mt-5 grid gap-5 sm:grid-cols-[160px_1fr]">
-                      {/* Fake QR */}
-                      <div className="mx-auto grid aspect-square w-40 place-items-center rounded-2xl border border-white/10 bg-white p-3">
-                        <QrPlaceholder />
-                      </div>
-                      <div className="space-y-3">
-                        <div>
-                          <span className="label">Send exactly</span>
-                          <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
-                            <span className="font-mono text-lg font-bold text-white">{coinAmount} {activeCoin.symbol}</span>
-                            <button onClick={() => copy(coinAmount, 'amt')} className="text-slate-400 hover:text-white">
-                              {copied === 'amt' ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
-                            </button>
+                        <div className="mt-5 grid gap-5 sm:grid-cols-[160px_1fr]">
+                          <div className="mx-auto grid aspect-square w-40 place-items-center rounded-2xl border border-white/10 bg-white p-3">
+                            <QrPlaceholder />
                           </div>
-                          <p className="mt-1 text-xs text-slate-500">≈ {formatUSD(total)} · rate locked for 15:00 min</p>
-                        </div>
-                        <div>
-                          <span className="label">{activeCoin.name} address</span>
-                          <div className="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
-                            <span className="truncate font-mono text-xs text-slate-300">{activeCoin.address}</span>
-                            <button onClick={() => copy(activeCoin.address, 'addr')} className="shrink-0 text-slate-400 hover:text-white">
-                              {copied === 'addr' ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
-                            </button>
+                          <div className="space-y-3">
+                            <div>
+                              <span className="label">Send exactly</span>
+                              <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
+                                <span className="font-mono text-lg font-bold text-white">{coinAmount} {activeCoin.symbol}</span>
+                                <button onClick={() => copy(coinAmount, 'amt')} className="text-slate-400 hover:text-white">
+                                  {copied === 'amt' ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
+                                </button>
+                              </div>
+                              <p className="mt-1 text-xs text-slate-500">≈ {formatUSD(total)} · {activeCoin.network} · rate locked 15:00 min</p>
+                            </div>
+                            <div>
+                              <span className="label">{activeCoin.name} address</span>
+                              <div className="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
+                                <span className="truncate font-mono text-xs text-slate-300">{activeCoin.address}</span>
+                                <button onClick={() => copy(activeCoin.address, 'addr')} className="shrink-0 text-slate-400 hover:text-white">
+                                  {copied === 'addr' ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
+                                </button>
+                              </div>
+                            </div>
+                            <div>
+                              <span className="label">Transaction ID / Hash (optional)</span>
+                              <input value={txid} onChange={(e) => setTxid(e.target.value)} placeholder="Paste your TX hash to speed things up" className="input" />
+                            </div>
                           </div>
                         </div>
-                        <div>
-                          <span className="label">Transaction ID / Hash (after sending)</span>
-                          <input value={txid} onChange={(e) => setTxid(e.target.value)} placeholder="Paste your TX hash for faster verification" className="input" />
-                        </div>
-                      </div>
-                    </div>
+                      </>
+                    )}
                   </motion.div>
                 ) : (
                   <motion.div key="inr" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="mt-5">
@@ -304,8 +326,8 @@ export default function Checkout() {
                         <div>
                           <span className="label">UPI ID</span>
                           <div className="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
-                            <span className="font-mono text-sm text-slate-300">{inrMethod.upiId}</span>
-                            <button onClick={() => copy(inrMethod.upiId, 'upi')} className="text-slate-400 hover:text-white">
+                            <span className="font-mono text-sm text-slate-300">{settings.inr.upiId}</span>
+                            <button onClick={() => copy(settings.inr.upiId, 'upi')} className="text-slate-400 hover:text-white">
                               {copied === 'upi' ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
                             </button>
                           </div>
@@ -316,17 +338,15 @@ export default function Checkout() {
                         </div>
                       </div>
                     </div>
+                    <div className="mt-4 flex items-start gap-2 rounded-xl border border-amber-400/20 bg-amber-400/5 p-3 text-xs text-amber-200/90">
+                      <Clock className="mt-0.5 h-4 w-4 shrink-0" />
+                      <span>UPI / INR payments are <strong>manually verified</strong> by our team (typically 5–15 minutes) before delivery.</span>
+                    </div>
                   </motion.div>
                 )}
               </AnimatePresence>
 
-              <div className="mt-5 flex items-start gap-2 rounded-xl border border-amber-400/20 bg-amber-400/5 p-3 text-xs text-amber-200/90">
-                <Clock className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>
-                  This is a <strong>demo checkout</strong> — no real payment is processed. After "paying", submit the
-                  order and our team manually verifies it (5–15 min) before delivery.
-                </span>
-              </div>
+              <p className="mt-5 text-center text-xs text-slate-600">Demo checkout — no real payment is processed.</p>
             </motion.div>
           )}
         </div>
@@ -367,11 +387,7 @@ export default function Checkout() {
 
             {/* Action */}
             {step === 1 ? (
-              <button
-                onClick={() => setStep(2)}
-                disabled={!email}
-                className="btn-primary mt-6 w-full"
-              >
+              <button onClick={() => setStep(2)} disabled={!email} className="btn-primary mt-6 w-full">
                 Continue to payment <ArrowRight className="h-4 w-4" />
               </button>
             ) : (
@@ -384,11 +400,102 @@ export default function Checkout() {
 
             <div className="mt-4 space-y-2 text-xs text-slate-400">
               <p className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-nebula-cyan" /> Buyer protection & warranty</p>
-              <p className="flex items-center gap-2"><Clock className="h-4 w-4 text-nebula-primary" /> Manual verification 5–15 min</p>
+              {payType === 'crypto' && settings.autoConfirmCrypto ? (
+                <p className="flex items-center gap-2"><Zap className="h-4 w-4 text-emerald-400" /> Crypto auto-confirmed & delivered instantly</p>
+              ) : (
+                <p className="flex items-center gap-2"><Clock className="h-4 w-4 text-nebula-primary" /> Manual verification 5–15 min</p>
+              )}
             </div>
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+function Confirmation({ order, confirmations, required }) {
+  const confirming = order.status === 'confirming'
+  const verified = order.status === 'verified'
+
+  return (
+    <div className="container-page py-20">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.96 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="mx-auto max-w-lg rounded-3xl border border-white/10 bg-gradient-to-br from-nebula-card/70 to-nebula-surface/30 p-10 text-center"
+      >
+        <span
+          className={`mx-auto grid h-16 w-16 place-items-center rounded-2xl shadow-glow ${
+            verified ? 'bg-gradient-to-br from-emerald-500 to-nebula-cyan' : 'bg-gradient-to-br from-nebula-primary to-nebula-cyan'
+          }`}
+        >
+          {confirming ? (
+            <Loader2 className="h-8 w-8 animate-spin text-white" />
+          ) : verified ? (
+            <CheckCircle2 className="h-8 w-8 text-white" />
+          ) : (
+            <PartyPopper className="h-8 w-8 text-white" />
+          )}
+        </span>
+
+        {confirming && (
+          <>
+            <h1 className="mt-6 font-display text-2xl font-bold">Confirming your payment…</h1>
+            <p className="mt-2 text-slate-400">
+              Watching the {order.method} network for your transaction. This is automatic — no need to do anything.
+            </p>
+            <div className="mt-6">
+              <div className="flex items-center justify-between text-xs text-slate-400">
+                <span>On-chain confirmations</span>
+                <span className="font-mono text-white">{Math.min(confirmations, required)}/{required}</span>
+              </div>
+              <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white/5">
+                <motion.div
+                  className="h-full rounded-full bg-gradient-to-r from-nebula-primary to-nebula-cyan"
+                  animate={{ width: `${(Math.min(confirmations, required) / required) * 100}%` }}
+                  transition={{ ease: 'easeOut' }}
+                />
+              </div>
+            </div>
+          </>
+        )}
+
+        {verified && (
+          <>
+            <h1 className="mt-6 font-display text-2xl font-bold">Payment confirmed!</h1>
+            <p className="mt-2 text-slate-400">
+              Your {order.method} payment was auto-verified on-chain and your order has been delivered to
+              {' '}<span className="text-white">{order.email || 'your email'}</span>.
+            </p>
+            <div className="mt-5 flex items-center justify-center gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-3 text-sm text-emerald-300">
+              <Mail className="h-4 w-4" /> Delivery email sent — check your inbox & spam
+            </div>
+          </>
+        )}
+
+        {order.status === 'pending' && (
+          <>
+            <h1 className="mt-6 font-display text-2xl font-bold">Order received!</h1>
+            <p className="mt-2 text-slate-400">
+              We've logged your payment and our team is verifying it now. Delivery goes to
+              {' '}<span className="text-white">{order.email || 'your email'}</span>.
+            </p>
+            <div className="mt-5 flex items-center justify-center gap-2 text-sm text-amber-300">
+              <Clock className="h-4 w-4" /> Manual verification: typically 5–15 minutes
+            </div>
+          </>
+        )}
+
+        <div className="mt-6 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+          <p className="text-xs uppercase tracking-wide text-slate-500">Order ID</p>
+          <p className="font-display text-xl font-bold gradient-text">{order.id}</p>
+        </div>
+
+        <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+          <Link to="/verify" className="btn-primary flex-1">Track / verify order</Link>
+          <Link to="/products" className="btn-ghost flex-1">Continue shopping</Link>
+        </div>
+      </motion.div>
     </div>
   )
 }

@@ -22,8 +22,11 @@ import {
   Filter,
   MoreVertical,
 } from 'lucide-react'
+import { Wallet, Zap, Save } from 'lucide-react'
 import Icon from '../components/Icon.jsx'
 import { products, formatUSD } from '../data/products.js'
+import { cryptoMethods } from '../data/products.js'
+import { loadPaymentSettings, savePaymentSettings } from '../data/settings.js'
 
 // ---- demo data helpers ----
 function loadOrders() {
@@ -56,6 +59,7 @@ const NAV = [
 
 const STATUS_META = {
   pending: { label: 'Pending', color: 'text-amber-300', dot: 'bg-amber-400', bg: 'bg-amber-400/10' },
+  confirming: { label: 'Confirming', color: 'text-sky-300', dot: 'bg-sky-400', bg: 'bg-sky-400/10' },
   verified: { label: 'Verified', color: 'text-emerald-400', dot: 'bg-emerald-400', bg: 'bg-emerald-400/10' },
   rejected: { label: 'Rejected', color: 'text-rose-400', dot: 'bg-rose-400', bg: 'bg-rose-400/10' },
 }
@@ -491,40 +495,151 @@ function Customers({ orders }) {
 }
 
 /* ---------------- Settings ---------------- */
-function SettingsPanel() {
+function Toggle({ checked, onChange }) {
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
+    <button
+      type="button"
+      onClick={() => onChange(!checked)}
+      className={`relative h-6 w-11 shrink-0 rounded-full transition ${checked ? 'bg-gradient-to-r from-nebula-primary to-nebula-cyan' : 'bg-white/10'}`}
+      aria-pressed={checked}
+    >
+      <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all ${checked ? 'left-[22px]' : 'left-0.5'}`} />
+    </button>
+  )
+}
+
+function SettingsPanel() {
+  const [settings, setSettings] = useState(loadPaymentSettings)
+  const [saved, setSaved] = useState(false)
+
+  function update(patch) {
+    setSettings((s) => ({ ...s, ...patch }))
+  }
+  function updateCoin(id, patch) {
+    setSettings((s) => ({ ...s, coins: { ...s.coins, [id]: { ...s.coins[id], ...patch } } }))
+  }
+  function save() {
+    savePaymentSettings(settings)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 1800)
+  }
+
+  const meta = (id) => cryptoMethods.find((c) => c.id === id) || {}
+
+  return (
+    <div className="space-y-6">
+      {/* Auto-processing */}
       <div className="card-surface p-6">
-        <h3 className="font-display text-lg font-semibold text-white">Store settings</h3>
+        <div className="flex items-center gap-3">
+          <span className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-emerald-500/20 to-nebula-cyan/20 text-emerald-300">
+            <Zap className="h-5 w-5" />
+          </span>
+          <div>
+            <h3 className="font-display text-lg font-semibold text-white">Crypto auto-processing</h3>
+            <p className="text-sm text-slate-400">Confirm crypto payments automatically — no manual review.</p>
+          </div>
+        </div>
+
         <div className="mt-5 space-y-4">
-          <div>
-            <label className="label">Store name</label>
-            <input defaultValue="Nebula Market" className="input" />
+          <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3">
+            <div>
+              <p className="font-medium text-white">Auto-confirm crypto payments</p>
+              <p className="text-xs text-slate-500">When on, orders verify & deliver after on-chain confirmations.</p>
+            </div>
+            <Toggle checked={settings.autoConfirmCrypto} onChange={(v) => update({ autoConfirmCrypto: v })} />
           </div>
-          <div>
-            <label className="label">Support email</label>
-            <input defaultValue="support@nebulamarket.demo" className="input" />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="label">Confirmations required</label>
+              <input
+                type="number"
+                min={1}
+                max={12}
+                value={settings.confirmationsRequired}
+                onChange={(e) => update({ confirmationsRequired: Math.max(1, Number(e.target.value) || 1) })}
+                className="input"
+              />
+            </div>
+            <div>
+              <label className="label">Avg. confirmation time (seconds)</label>
+              <input
+                type="number"
+                min={1}
+                value={settings.simulatedConfirmSeconds}
+                onChange={(e) => update({ simulatedConfirmSeconds: Math.max(1, Number(e.target.value) || 1) })}
+                className="input"
+              />
+            </div>
           </div>
-          <div>
-            <label className="label">USD → INR rate</label>
-            <input defaultValue="83.40" className="input" />
-          </div>
-          <button className="btn-primary">Save changes</button>
         </div>
       </div>
 
+      {/* Crypto wallets */}
       <div className="card-surface p-6">
-        <h3 className="font-display text-lg font-semibold text-white">Payment wallets</h3>
-        <div className="mt-5 space-y-3 text-sm">
-          {['BTC', 'ETH', 'USDT', 'LTC', 'SOL', 'UPI'].map((m) => (
-            <div key={m} className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3">
-              <span className="font-medium text-white">{m}</span>
-              <span className="inline-flex items-center gap-1.5 text-xs text-emerald-400">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Active
-              </span>
-            </div>
-          ))}
+        <div className="flex items-center gap-3">
+          <span className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-nebula-primary/20 to-nebula-cyan/20 text-nebula-secondary">
+            <Wallet className="h-5 w-5" />
+          </span>
+          <div>
+            <h3 className="font-display text-lg font-semibold text-white">Crypto wallets</h3>
+            <p className="text-sm text-slate-400">Receiving addresses shown to customers at checkout.</p>
+          </div>
         </div>
+
+        <div className="mt-5 space-y-3">
+          {cryptoMethods.map((c) => {
+            const cfg = settings.coins[c.id]
+            return (
+              <div key={c.id} className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+                <div className="flex items-center gap-3">
+                  <span className="grid h-8 w-8 place-items-center rounded-lg text-xs font-bold" style={{ background: `${c.color}22`, color: c.color }}>
+                    {c.symbol[0]}
+                  </span>
+                  <div className="flex-1">
+                    <p className="font-medium text-white">{c.name} <span className="text-slate-500">· {cfg.network}</span></p>
+                  </div>
+                  <span className={`text-xs font-semibold ${cfg.enabled ? 'text-emerald-400' : 'text-slate-500'}`}>{cfg.enabled ? 'Enabled' : 'Disabled'}</span>
+                  <Toggle checked={cfg.enabled} onChange={(v) => updateCoin(c.id, { enabled: v })} />
+                </div>
+                <input
+                  value={cfg.address}
+                  onChange={(e) => updateCoin(c.id, { address: e.target.value })}
+                  placeholder={`${c.symbol} receiving address`}
+                  className="input mt-3 font-mono text-xs"
+                  disabled={!cfg.enabled}
+                />
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* INR / UPI */}
+      <div className="card-surface p-6">
+        <h3 className="font-display text-lg font-semibold text-white">UPI / INR</h3>
+        <p className="text-sm text-slate-400">Indian Rupee payments are verified manually.</p>
+        <div className="mt-5 space-y-4">
+          <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3">
+            <p className="font-medium text-white">Accept UPI / INR</p>
+            <Toggle checked={settings.inr.enabled} onChange={(v) => update({ inr: { ...settings.inr, enabled: v } })} />
+          </div>
+          <div>
+            <label className="label">UPI ID</label>
+            <input
+              value={settings.inr.upiId}
+              onChange={(e) => update({ inr: { ...settings.inr, upiId: e.target.value } })}
+              className="input font-mono text-sm"
+              disabled={!settings.inr.enabled}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <button onClick={save} className="btn-primary">
+          {saved ? <><Check className="h-4 w-4" /> Saved</> : <><Save className="h-4 w-4" /> Save payment settings</>}
+        </button>
+        <span className="text-xs text-slate-500">Changes apply to the checkout immediately.</span>
       </div>
     </div>
   )

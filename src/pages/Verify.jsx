@@ -7,6 +7,7 @@ import { formatUSD } from '../data/products.js'
 
 const STATUS = {
   pending: { label: 'Awaiting verification', icon: Clock, color: 'text-amber-300', bg: 'bg-amber-400/10 border-amber-400/20' },
+  confirming: { label: 'Confirming on-chain', icon: Clock, color: 'text-sky-300', bg: 'bg-sky-400/10 border-sky-400/20' },
   verified: { label: 'Verified — delivered', icon: CheckCircle2, color: 'text-emerald-400', bg: 'bg-emerald-400/10 border-emerald-400/20' },
   rejected: { label: 'Payment not found', icon: XCircle, color: 'text-rose-400', bg: 'bg-rose-400/10 border-rose-400/20' },
 }
