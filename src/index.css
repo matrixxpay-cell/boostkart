@@ -1,0 +1,89 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+* {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-nebula-bg text-slate-200 font-sans antialiased;
+  background-image: radial-gradient(circle at 15% -10%, rgba(124, 92, 255, 0.14), transparent 45%),
+    radial-gradient(circle at 90% 0%, rgba(34, 211, 238, 0.1), transparent 40%);
+  background-attachment: fixed;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #06060f;
+}
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #7c5cff, #22d3ee);
+  border-radius: 999px;
+  border: 2px solid #06060f;
+}
+
+@layer components {
+  .container-page {
+    @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+  }
+
+  .glass {
+    @apply border border-white/10 bg-white/[0.03] backdrop-blur-xl;
+  }
+
+  .card-surface {
+    @apply rounded-2xl border border-nebula-border/70 bg-nebula-card/60 backdrop-blur-xl;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-nebula-primary/60 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-primary {
+    @apply btn bg-gradient-to-r from-nebula-primary to-nebula-cyan text-white shadow-glow hover:shadow-glow-cyan hover:brightness-110 active:scale-[0.98];
+  }
+
+  .btn-ghost {
+    @apply btn border border-white/10 bg-white/[0.03] text-slate-200 hover:border-nebula-primary/50 hover:bg-white/[0.06];
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-medium text-slate-300;
+  }
+
+  .gradient-text {
+    @apply bg-gradient-to-r from-nebula-primary via-nebula-pink to-nebula-cyan bg-clip-text text-transparent;
+  }
+
+  .input {
+    @apply w-full rounded-xl border border-nebula-border bg-nebula-surface/80 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 transition focus:border-nebula-primary/60 focus:outline-none focus:ring-2 focus:ring-nebula-primary/20;
+  }
+
+  .label {
+    @apply mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-400;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  .bg-grid {
+    background-image: linear-gradient(rgba(124, 92, 255, 0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(124, 92, 255, 0.06) 1px, transparent 1px);
+    background-size: 48px 48px;
+  }
+  .mask-fade-b {
+    -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+    mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+  }
+}
