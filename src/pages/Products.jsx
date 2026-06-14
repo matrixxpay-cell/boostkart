@@ -4,7 +4,8 @@ import { SlidersHorizontal, Search, X } from 'lucide-react'
 import Reveal from '../components/Reveal.jsx'
 import ProductCard from '../components/ProductCard.jsx'
 import Icon from '../components/Icon.jsx'
-import { products, categories } from '../data/products.js'
+import { categories } from '../data/products.js'
+import { useProducts } from '../context/ProductsContext.jsx'
 
 const sorts = [
   { id: 'popular', label: 'Most popular' },
@@ -18,6 +19,7 @@ export default function Products() {
   const initialCat = params.get('cat') || 'all'
   const initialQ = params.get('q') || ''
 
+  const { products } = useProducts()
   const [cat, setCat] = useState(initialCat)
   const [q, setQ] = useState(initialQ)
   const [sort, setSort] = useState('popular')

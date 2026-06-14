@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   LayoutDashboard,
   ShoppingBag,
@@ -19,14 +19,33 @@ import {
   ShoppingCart,
   Sparkles,
   ExternalLink,
-  Filter,
   MoreVertical,
+  Wallet,
+  Zap,
+  Save,
+  Lock,
+  LogOut,
+  Plus,
+  Pencil,
+  Trash2,
+  Eye,
+  X,
+  Key,
+  Send,
+  Check,
+  ShieldCheck,
 } from 'lucide-react'
-import { Wallet, Zap, Save } from 'lucide-react'
 import Icon from '../components/Icon.jsx'
-import { products, formatUSD } from '../data/products.js'
-import { cryptoMethods } from '../data/products.js'
+import { categories, cryptoMethods, formatUSD } from '../data/products.js'
 import { loadPaymentSettings, savePaymentSettings } from '../data/settings.js'
+import { useProducts, FULFILLMENT_TYPES } from '../context/ProductsContext.jsx'
+
+// ---- admin auth (client-side demo gate) ----
+const PIN_KEY = 'nebula-admin-pin'
+const DEFAULT_PIN = 'admin123'
+function getPin() {
+  return localStorage.getItem(PIN_KEY) || DEFAULT_PIN
+}
 
 // ---- demo data helpers ----
 function loadOrders() {
@@ -65,6 +84,7 @@ const STATUS_META = {
 }
 
 export default function Admin() {
+  const [authed, setAuthed] = useState(() => sessionStorage.getItem('nebula-admin-authed') === '1')
   const [tab, setTab] = useState('dashboard')
   const [orders, setOrders] = useState([])
 
@@ -85,6 +105,24 @@ export default function Admin() {
       return next
     })
   }
+
+  // Attach delivered credentials to an order and mark it verified.
+  function deliverOrder(id, delivery) {
+    setOrders((prev) => {
+      const next = prev.map((o) =>
+        o.id === id ? { ...o, delivery: { ...delivery, deliveredAt: new Date().toISOString() }, status: 'verified' } : o,
+      )
+      saveOrders(next)
+      return next
+    })
+  }
+
+  function logout() {
+    sessionStorage.removeItem('nebula-admin-authed')
+    setAuthed(false)
+  }
+
+  if (!authed) return <AdminLogin onAuth={() => setAuthed(true)} />
 
   return (
     <div className="flex min-h-screen bg-nebula-bg">
@@ -144,6 +182,9 @@ export default function Admin() {
               <span className="grid h-7 w-7 place-items-center rounded-lg bg-gradient-to-br from-nebula-primary to-nebula-pink text-xs font-bold text-white">A</span>
               <span className="hidden text-sm font-medium sm:inline">Admin</span>
             </div>
+            <button onClick={logout} title="Log out" className="grid h-10 w-10 place-items-center rounded-xl border border-white/10 bg-white/[0.03] text-slate-300 hover:border-rose-400/40 hover:text-rose-300">
+              <LogOut className="h-5 w-5" />
+            </button>
           </div>
         </header>
 
@@ -162,7 +203,7 @@ export default function Admin() {
 
         <div className="flex-1 overflow-y-auto p-4 sm:p-6">
           {tab === 'dashboard' && <Dashboard orders={orders} />}
-          {tab === 'orders' && <Orders orders={orders} setStatus={setStatus} />}
+          {tab === 'orders' && <Orders orders={orders} setStatus={setStatus} deliverOrder={deliverOrder} />}
           {tab === 'products' && <ProductsAdmin />}
           {tab === 'customers' && <Customers orders={orders} />}
           {tab === 'settings' && <SettingsPanel />}
@@ -172,8 +213,71 @@ export default function Admin() {
   )
 }
 
+/* ---------------- Auth gate ---------------- */
+function AdminLogin({ onAuth }) {
+  const [pin, setPin] = useState('')
+  const [error, setError] = useState(false)
+
+  function submit(e) {
+    e.preventDefault()
+    if (pin === getPin()) {
+      sessionStorage.setItem('nebula-admin-authed', '1')
+      onAuth()
+    } else {
+      setError(true)
+    }
+  }
+
+  return (
+    <div className="grid min-h-screen place-items-center bg-nebula-bg bg-grid px-4">
+      <motion.form
+        onSubmit={submit}
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-sm rounded-3xl border border-white/10 bg-gradient-to-br from-nebula-card/80 to-nebula-surface/40 p-8 backdrop-blur-xl"
+      >
+        <div className="flex flex-col items-center text-center">
+          <span className="grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-nebula-primary to-nebula-cyan shadow-glow">
+            <Lock className="h-7 w-7 text-white" />
+          </span>
+          <h1 className="mt-5 font-display text-2xl font-bold">Admin access</h1>
+          <p className="mt-2 text-sm text-slate-400">Enter your PIN to open the console.</p>
+        </div>
+
+        <div className="mt-6">
+          <label className="label">Admin PIN</label>
+          <input
+            type="password"
+            value={pin}
+            onChange={(e) => {
+              setPin(e.target.value)
+              setError(false)
+            }}
+            placeholder="••••••••"
+            autoFocus
+            className="input text-center tracking-widest"
+          />
+          {error && <p className="mt-2 text-center text-xs text-rose-400">Incorrect PIN. Try again.</p>}
+        </div>
+
+        <button type="submit" className="btn-primary mt-5 w-full">
+          <ShieldCheck className="h-4 w-4" /> Unlock console
+        </button>
+
+        <p className="mt-4 text-center text-[11px] text-slate-600">
+          Demo PIN: <code className="text-slate-400">{DEFAULT_PIN}</code> · change it in Settings
+        </p>
+        <Link to="/" className="mt-3 flex items-center justify-center gap-1 text-xs text-slate-500 hover:text-white">
+          <ExternalLink className="h-3.5 w-3.5" /> Back to storefront
+        </Link>
+      </motion.form>
+    </div>
+  )
+}
+
 /* ---------------- Dashboard ---------------- */
 function Dashboard({ orders }) {
+  const { products } = useProducts()
   const revenue = orders.filter((o) => o.status === 'verified').reduce((s, o) => s + o.total, 0)
   const pending = orders.filter((o) => o.status === 'pending').length
   const verified = orders.filter((o) => o.status === 'verified').length
@@ -300,9 +404,12 @@ function QueueRow({ icon: I, color, label, value }) {
 }
 
 /* ---------------- Orders ---------------- */
-function Orders({ orders, setStatus }) {
+function Orders({ orders, setStatus, deliverOrder }) {
   const [filter, setFilter] = useState('all')
   const [q, setQ] = useState('')
+  const [openId, setOpenId] = useState(null)
+
+  const openOrder = orders.find((o) => o.id === openId) || null
 
   const filtered = orders.filter((o) => {
     if (filter !== 'all' && o.status !== filter) return false
@@ -371,11 +478,9 @@ function Orders({ orders, setStatus }) {
                     </td>
                     <td className="px-5 py-4">
                       <div className="flex items-center justify-end gap-2">
-                        {o.status !== 'verified' && (
-                          <button onClick={() => setStatus(o.id, 'verified')} className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/15 px-2.5 py-1.5 text-xs font-semibold text-emerald-400 hover:bg-emerald-500/25">
-                            <CheckCircle2 className="h-3.5 w-3.5" /> Verify
-                          </button>
-                        )}
+                        <button onClick={() => setOpenId(o.id)} className="inline-flex items-center gap-1 rounded-lg bg-white/5 px-2.5 py-1.5 text-xs font-semibold text-slate-200 hover:bg-white/10">
+                          {o.delivery ? <Eye className="h-3.5 w-3.5" /> : <Send className="h-3.5 w-3.5" />} {o.delivery ? 'View' : 'Deliver'}
+                        </button>
                         {o.status !== 'rejected' && (
                           <button onClick={() => setStatus(o.id, 'rejected')} className="inline-flex items-center gap-1 rounded-lg bg-rose-500/15 px-2.5 py-1.5 text-xs font-semibold text-rose-400 hover:bg-rose-500/25">
                             <XCircle className="h-3.5 w-3.5" /> Reject
@@ -390,56 +495,415 @@ function Orders({ orders, setStatus }) {
           </table>
         </div>
       </div>
+
+      <AnimatePresence>
+        {openOrder && (
+          <OrderDrawer
+            order={openOrder}
+            onClose={() => setOpenId(null)}
+            onDeliver={(delivery) => {
+              deliverOrder(openOrder.id, delivery)
+              setOpenId(null)
+            }}
+          />
+        )}
+      </AnimatePresence>
     </div>
   )
 }
 
-/* ---------------- Products ---------------- */
-function ProductsAdmin() {
+/* ---------------- Order delivery drawer ---------------- */
+function OrderDrawer({ order, onClose, onDeliver }) {
+  const existing = order.delivery
+  const [type, setType] = useState(existing?.type || 'serial')
+  const [content, setContent] = useState(existing?.content || '')
+
+  const typeMeta = FULFILLMENT_TYPES.find((t) => t.id === type) || FULFILLMENT_TYPES[0]
+  const placeholder =
+    type === 'serial'
+      ? 'XXXXX-XXXXX-XXXXX-XXXXX'
+      : type === 'account'
+        ? 'email: user@mail.com\npassword: ••••••••'
+        : type === 'download'
+          ? 'https://files.nebula.market/your-download.zip'
+          : 'Delivery instructions or notes for the customer…'
+
   return (
-    <div className="card-surface overflow-hidden">
-      <div className="flex items-center justify-between border-b border-white/10 p-5">
-        <h3 className="font-display text-lg font-semibold text-white">Catalog ({products.length})</h3>
-        <button className="btn-primary"><Package className="h-4 w-4" /> Add product</button>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[680px] text-left text-sm">
-          <thead className="border-b border-white/10 text-xs uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="px-5 py-3 font-medium">Product</th>
-              <th className="px-5 py-3 font-medium">Category</th>
-              <th className="px-5 py-3 font-medium">Price</th>
-              <th className="px-5 py-3 font-medium">Stock</th>
-              <th className="px-5 py-3 font-medium">Rating</th>
-              <th className="px-5 py-3 text-right font-medium"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-white/5">
-            {products.map((p) => (
-              <tr key={p.id} className="transition hover:bg-white/[0.02]">
-                <td className="px-5 py-4">
-                  <div className="flex items-center gap-3">
-                    <span className="grid h-9 w-9 place-items-center rounded-lg" style={{ background: `${p.color}22`, color: p.color }}>
-                      <Icon name={p.icon} className="h-5 w-5" />
-                    </span>
-                    <span className="font-medium text-white">{p.name}</span>
-                  </div>
-                </td>
-                <td className="px-5 py-4 capitalize text-slate-400">{p.category}</td>
-                <td className="px-5 py-4 font-semibold text-white">{formatUSD(p.price)}</td>
-                <td className="px-5 py-4">
-                  <span className={`chip ${p.stock < 80 ? 'text-amber-300' : 'text-emerald-300'}`}>{p.stock} in stock</span>
-                </td>
-                <td className="px-5 py-4 text-slate-300">{p.rating} ★</td>
-                <td className="px-5 py-4 text-right">
-                  <button className="text-slate-500 hover:text-white"><MoreVertical className="h-4 w-4" /></button>
-                </td>
-              </tr>
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ x: 40 }}
+        animate={{ x: 0 }}
+        exit={{ x: 40 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 32 }}
+        onClick={(e) => e.stopPropagation()}
+        className="flex h-full w-full max-w-md flex-col overflow-y-auto border-l border-white/10 bg-nebula-surface p-6"
+      >
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-display text-lg font-bold text-white">Order {order.id}</h3>
+            <p className="text-xs text-slate-500">{new Date(order.createdAt).toLocaleString()}</p>
+          </div>
+          <button onClick={onClose} className="grid h-9 w-9 place-items-center rounded-lg border border-white/10 text-slate-400 hover:text-white">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
+          <DrawerField label="Customer" value={order.email || '—'} />
+          <DrawerField label="Payment" value={order.method} />
+          <DrawerField label="Total" value={`${formatUSD(order.total)} · ₹${order.totalINR?.toLocaleString('en-IN')}`} />
+          <DrawerField label="Status" value={(STATUS_META[order.status] || STATUS_META.pending).label} />
+        </div>
+        {order.discord && <div className="mt-3"><DrawerField label="Discord / invite" value={order.discord} /></div>}
+        {order.txid && <div className="mt-3"><DrawerField label="TX / UTR" value={order.txid} /></div>}
+
+        <div className="mt-5">
+          <p className="label">Items</p>
+          <ul className="space-y-2">
+            {order.items.map((it, i) => (
+              <li key={i} className="flex items-center justify-between rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2 text-sm">
+                <span className="text-slate-200">{it.name} <span className="text-slate-500">· {it.durationLabel} ×{it.qty}</span></span>
+                <span className="text-slate-300">{formatUSD(it.price * it.qty)}</span>
+              </li>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </ul>
+        </div>
+
+        {/* Delivery */}
+        <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+          <div className="flex items-center gap-2">
+            <Key className="h-4 w-4 text-nebula-cyan" />
+            <h4 className="font-semibold text-white">{existing ? 'Delivered credentials' : 'Deliver credentials'}</h4>
+          </div>
+          <p className="mt-1 text-xs text-slate-500">Sent to the customer and shown on their order page once verified.</p>
+
+          <div className="mt-4">
+            <label className="label">Delivery type</label>
+            <select value={type} onChange={(e) => setType(e.target.value)} className="input">
+              {FULFILLMENT_TYPES.map((t) => (
+                <option key={t.id} value={t.id} className="bg-nebula-surface">{t.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="mt-3">
+            <label className="label">{typeMeta.label} content</label>
+            <textarea
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              rows={type === 'account' ? 4 : 3}
+              placeholder={placeholder}
+              className="input font-mono text-xs"
+            />
+          </div>
+
+          <button
+            onClick={() => onDeliver({ type, content })}
+            disabled={!content.trim()}
+            className="btn-primary mt-4 w-full"
+          >
+            <Send className="h-4 w-4" /> {existing ? 'Update & re-deliver' : 'Deliver & mark verified'}
+          </button>
+        </div>
+
+        {order.status !== 'rejected' && (
+          <button onClick={onClose} className="mt-3 text-center text-xs text-slate-500 hover:text-white">Close without delivering</button>
+        )}
+      </motion.div>
+    </motion.div>
+  )
+}
+
+function DrawerField({ label, value }) {
+  return (
+    <div className="rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2">
+      <p className="text-[11px] uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="mt-0.5 break-words font-medium text-slate-200">{value}</p>
     </div>
+  )
+}
+
+/* ---------------- Products (CRUD) ---------------- */
+const blankProduct = {
+  name: '',
+  category: 'streaming',
+  tagline: '',
+  description: '',
+  price: 0,
+  oldPrice: '',
+  stock: 100,
+  delivery: 'Instant',
+  badge: '',
+  color: '#7c5cff',
+  icon: 'Box',
+  rating: 5,
+  reviews: 0,
+  fulfillmentType: 'serial',
+  durations: [{ label: '1 Month', price: 0 }],
+  features: [],
+}
+
+const FULFILLMENT_LABEL = FULFILLMENT_TYPES.reduce((a, t) => ({ ...a, [t.id]: t.label }), {})
+
+function ProductsAdmin() {
+  const { products, addProduct, updateProduct, removeProduct, resetProducts } = useProducts()
+  const [editing, setEditing] = useState(null) // product or {} for new
+  const [confirmDelete, setConfirmDelete] = useState(null)
+
+  function handleSave(data) {
+    if (data.id) updateProduct(data.id, data)
+    else addProduct(data)
+    setEditing(null)
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="card-surface overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 p-5">
+          <h3 className="font-display text-lg font-semibold text-white">Catalog ({products.length})</h3>
+          <div className="flex gap-2">
+            <button onClick={resetProducts} className="btn-ghost text-xs">Reset to defaults</button>
+            <button onClick={() => setEditing({ ...blankProduct })} className="btn-primary"><Plus className="h-4 w-4" /> Add product</button>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px] text-left text-sm">
+            <thead className="border-b border-white/10 text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-5 py-3 font-medium">Product</th>
+                <th className="px-5 py-3 font-medium">Category</th>
+                <th className="px-5 py-3 font-medium">Fulfillment</th>
+                <th className="px-5 py-3 font-medium">Price</th>
+                <th className="px-5 py-3 font-medium">Stock</th>
+                <th className="px-5 py-3 text-right font-medium">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {products.length === 0 && (
+                <tr><td colSpan={6} className="px-5 py-12 text-center text-slate-500">No products. Add one to get started.</td></tr>
+              )}
+              {products.map((p) => (
+                <tr key={p.id} className="transition hover:bg-white/[0.02]">
+                  <td className="px-5 py-4">
+                    <div className="flex items-center gap-3">
+                      <span className="grid h-9 w-9 place-items-center rounded-lg" style={{ background: `${p.color}22`, color: p.color }}>
+                        <Icon name={p.icon} className="h-5 w-5" />
+                      </span>
+                      <span className="font-medium text-white">{p.name}</span>
+                    </div>
+                  </td>
+                  <td className="px-5 py-4 capitalize text-slate-400">{p.category}</td>
+                  <td className="px-5 py-4"><span className="chip">{FULFILLMENT_LABEL[p.fulfillmentType] || 'Manual'}</span></td>
+                  <td className="px-5 py-4 font-semibold text-white">{formatUSD(p.price)}</td>
+                  <td className="px-5 py-4">
+                    <span className={`chip ${p.stock < 80 ? 'text-amber-300' : 'text-emerald-300'}`}>{p.stock}</span>
+                  </td>
+                  <td className="px-5 py-4">
+                    <div className="flex items-center justify-end gap-2">
+                      <button onClick={() => setEditing(p)} className="grid h-8 w-8 place-items-center rounded-lg bg-white/5 text-slate-300 hover:text-white"><Pencil className="h-3.5 w-3.5" /></button>
+                      <button onClick={() => setConfirmDelete(p)} className="grid h-8 w-8 place-items-center rounded-lg bg-rose-500/10 text-rose-400 hover:bg-rose-500/20"><Trash2 className="h-3.5 w-3.5" /></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <AnimatePresence>
+        {editing && <ProductForm initial={editing} onSave={handleSave} onClose={() => setEditing(null)} />}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {confirmDelete && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 backdrop-blur-sm"
+            onClick={() => setConfirmDelete(null)}
+          >
+            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} onClick={(e) => e.stopPropagation()} className="w-full max-w-sm rounded-2xl border border-white/10 bg-nebula-surface p-6 text-center">
+              <Trash2 className="mx-auto h-8 w-8 text-rose-400" />
+              <h3 className="mt-3 font-display text-lg font-bold text-white">Delete “{confirmDelete.name}”?</h3>
+              <p className="mt-1 text-sm text-slate-400">This removes it from the storefront. You can reset to defaults later.</p>
+              <div className="mt-5 flex gap-2">
+                <button onClick={() => setConfirmDelete(null)} className="btn-ghost flex-1">Cancel</button>
+                <button onClick={() => { removeProduct(confirmDelete.id); setConfirmDelete(null) }} className="btn flex-1 bg-rose-500 text-white hover:bg-rose-600">Delete</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
+function ProductForm({ initial, onSave, onClose }) {
+  const [f, setF] = useState(() => ({ ...blankProduct, ...initial, oldPrice: initial.oldPrice ?? '' }))
+  const set = (patch) => setF((s) => ({ ...s, ...patch }))
+
+  function setDuration(i, patch) {
+    setF((s) => ({ ...s, durations: s.durations.map((d, idx) => (idx === i ? { ...d, ...patch } : d)) }))
+  }
+  function addDuration() {
+    setF((s) => ({ ...s, durations: [...s.durations, { label: '', price: 0 }] }))
+  }
+  function removeDuration(i) {
+    setF((s) => ({ ...s, durations: s.durations.filter((_, idx) => idx !== i) }))
+  }
+
+  function submit(e) {
+    e.preventDefault()
+    const durations = f.durations.filter((d) => d.label.trim()).map((d) => ({ label: d.label.trim(), price: Number(d.price) || 0 }))
+    const cleaned = {
+      ...f,
+      name: f.name.trim() || 'Untitled product',
+      price: Number(f.price) || 0,
+      oldPrice: f.oldPrice === '' ? null : Number(f.oldPrice),
+      stock: Number(f.stock) || 0,
+      rating: Number(f.rating) || 5,
+      reviews: Number(f.reviews) || 0,
+      badge: f.badge.trim() || null,
+      icon: f.icon.trim() || 'Box',
+      durations: durations.length ? durations : [{ label: '1 Month', price: Number(f.price) || 0 }],
+      features: Array.isArray(f.features)
+        ? f.features
+        : String(f.features || '').split('\n').map((s) => s.trim()).filter(Boolean),
+    }
+    onSave(cleaned)
+  }
+
+  const featuresText = Array.isArray(f.features) ? f.features.join('\n') : f.features
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <motion.form
+        onSubmit={submit}
+        initial={{ x: 40 }} animate={{ x: 0 }} exit={{ x: 40 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 32 }}
+        onClick={(e) => e.stopPropagation()}
+        className="flex h-full w-full max-w-lg flex-col overflow-y-auto border-l border-white/10 bg-nebula-surface p-6"
+      >
+        <div className="flex items-center justify-between">
+          <h3 className="font-display text-lg font-bold text-white">{f.id ? 'Edit product' : 'New product'}</h3>
+          <button type="button" onClick={onClose} className="grid h-9 w-9 place-items-center rounded-lg border border-white/10 text-slate-400 hover:text-white"><X className="h-4 w-4" /></button>
+        </div>
+
+        <div className="mt-5 space-y-4">
+          <div>
+            <label className="label">Name</label>
+            <input value={f.name} onChange={(e) => set({ name: e.target.value })} required className="input" placeholder="e.g. Spotify Premium" />
+          </div>
+          <div>
+            <label className="label">Tagline</label>
+            <input value={f.tagline} onChange={(e) => set({ tagline: e.target.value })} className="input" placeholder="Short one-liner" />
+          </div>
+          <div>
+            <label className="label">Description</label>
+            <textarea value={f.description} onChange={(e) => set({ description: e.target.value })} rows={3} className="input" placeholder="Full description" />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Category</label>
+              <select value={f.category} onChange={(e) => set({ category: e.target.value })} className="input">
+                {categories.map((c) => <option key={c.id} value={c.id} className="bg-nebula-surface">{c.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label">Fulfillment type</label>
+              <select value={f.fulfillmentType} onChange={(e) => set({ fulfillmentType: e.target.value })} className="input">
+                {FULFILLMENT_TYPES.map((t) => <option key={t.id} value={t.id} className="bg-nebula-surface">{t.label}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Price (USD)</label>
+              <input type="number" step="0.01" min="0" value={f.price} onChange={(e) => set({ price: e.target.value })} className="input" />
+            </div>
+            <div>
+              <label className="label">Compare-at price (optional)</label>
+              <input type="number" step="0.01" min="0" value={f.oldPrice} onChange={(e) => set({ oldPrice: e.target.value })} className="input" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="label">Stock</label>
+              <input type="number" min="0" value={f.stock} onChange={(e) => set({ stock: e.target.value })} className="input" />
+            </div>
+            <div>
+              <label className="label">Delivery</label>
+              <input value={f.delivery} onChange={(e) => set({ delivery: e.target.value })} className="input" placeholder="Instant" />
+            </div>
+            <div>
+              <label className="label">Badge</label>
+              <input value={f.badge} onChange={(e) => set({ badge: e.target.value })} className="input" placeholder="Hot" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="label">Icon (Lucide)</label>
+              <input value={f.icon} onChange={(e) => set({ icon: e.target.value })} className="input" placeholder="Music" />
+            </div>
+            <div>
+              <label className="label">Accent color</label>
+              <input type="color" value={f.color} onChange={(e) => set({ color: e.target.value })} className="input h-[42px] p-1" />
+            </div>
+            <div>
+              <label className="label">Rating</label>
+              <input type="number" step="0.1" min="0" max="5" value={f.rating} onChange={(e) => set({ rating: e.target.value })} className="input" />
+            </div>
+          </div>
+
+          {/* Durations / plans */}
+          <div>
+            <div className="flex items-center justify-between">
+              <label className="label mb-0">Plans / durations</label>
+              <button type="button" onClick={addDuration} className="text-xs font-semibold text-nebula-secondary hover:underline">+ Add plan</button>
+            </div>
+            <div className="mt-2 space-y-2">
+              {f.durations.map((d, i) => (
+                <div key={i} className="flex gap-2">
+                  <input value={d.label} onChange={(e) => setDuration(i, { label: e.target.value })} placeholder="1 Month" className="input flex-1" />
+                  <input type="number" step="0.01" min="0" value={d.price} onChange={(e) => setDuration(i, { price: e.target.value })} placeholder="0.00" className="input w-28" />
+                  <button type="button" onClick={() => removeDuration(i)} className="grid w-10 shrink-0 place-items-center rounded-xl border border-white/10 text-slate-500 hover:text-rose-400"><Trash2 className="h-4 w-4" /></button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="label">Features (one per line)</label>
+            <textarea
+              value={featuresText}
+              onChange={(e) => set({ features: e.target.value.split('\n') })}
+              rows={4}
+              className="input"
+              placeholder={'Ad-free listening\nOffline downloads'}
+            />
+          </div>
+        </div>
+
+        <div className="sticky bottom-0 mt-6 flex gap-2 bg-nebula-surface pt-2">
+          <button type="button" onClick={onClose} className="btn-ghost flex-1">Cancel</button>
+          <button type="submit" className="btn-primary flex-1"><Save className="h-4 w-4" /> {f.id ? 'Save changes' : 'Create product'}</button>
+        </div>
+      </motion.form>
+    </motion.div>
   )
 }
 
@@ -511,6 +975,16 @@ function Toggle({ checked, onChange }) {
 function SettingsPanel() {
   const [settings, setSettings] = useState(loadPaymentSettings)
   const [saved, setSaved] = useState(false)
+  const [newPin, setNewPin] = useState('')
+  const [pinSaved, setPinSaved] = useState(false)
+
+  function savePin() {
+    if (newPin.trim().length < 4) return
+    localStorage.setItem(PIN_KEY, newPin.trim())
+    setNewPin('')
+    setPinSaved(true)
+    setTimeout(() => setPinSaved(false), 1800)
+  }
 
   function update(patch) {
     setSettings((s) => ({ ...s, ...patch }))
@@ -528,6 +1002,28 @@ function SettingsPanel() {
 
   return (
     <div className="space-y-6">
+      {/* Admin security */}
+      <div className="card-surface p-6">
+        <div className="flex items-center gap-3">
+          <span className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-nebula-pink/20 to-nebula-primary/20 text-nebula-pink">
+            <Lock className="h-5 w-5" />
+          </span>
+          <div>
+            <h3 className="font-display text-lg font-semibold text-white">Admin security</h3>
+            <p className="text-sm text-slate-400">Change the PIN used to unlock this console.</p>
+          </div>
+        </div>
+        <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="flex-1">
+            <label className="label">New PIN (min 4 characters)</label>
+            <input type="password" value={newPin} onChange={(e) => setNewPin(e.target.value)} placeholder="New admin PIN" className="input" />
+          </div>
+          <button onClick={savePin} disabled={newPin.trim().length < 4} className="btn-primary">
+            {pinSaved ? <><Check className="h-4 w-4" /> Updated</> : <><Save className="h-4 w-4" /> Update PIN</>}
+          </button>
+        </div>
+      </div>
+
       {/* Auto-processing */}
       <div className="card-surface p-6">
         <div className="flex items-center gap-3">

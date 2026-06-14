@@ -14,7 +14,8 @@ import {
 import Reveal from '../components/Reveal.jsx'
 import ProductCard from '../components/ProductCard.jsx'
 import Icon from '../components/Icon.jsx'
-import { products, categories } from '../data/products.js'
+import { categories } from '../data/products.js'
+import { useProducts } from '../context/ProductsContext.jsx'
 
 const stats = [
   { label: 'Orders delivered', value: '128K+' },
@@ -31,6 +32,7 @@ const perks = [
 ]
 
 export default function Home() {
+  const { products } = useProducts()
   const featured = products.slice(0, 6)
   const trending = products.filter((p) => ['Hot', 'Best Seller', 'Best Value'].includes(p.badge)).slice(0, 3)
 
@@ -108,9 +110,9 @@ export default function Home() {
           >
             <div className="absolute inset-0 rounded-3xl border border-white/10 bg-gradient-to-br from-nebula-card/80 to-nebula-surface/40 backdrop-blur-xl" />
             <div className="animate-spin-slow absolute -right-10 -top-10 h-40 w-40 rounded-full border border-dashed border-nebula-primary/30" />
-            <FloatingCard className="left-6 top-8" product={products[0]} delay={0} />
-            <FloatingCard className="right-6 top-28" product={products[3]} delay={0.6} />
-            <FloatingCard className="left-10 bottom-10" product={products[2]} delay={1.2} />
+            {featured[0] && <FloatingCard className="left-6 top-8" product={featured[0]} delay={0} />}
+            {featured[3] && <FloatingCard className="right-6 top-28" product={featured[3]} delay={0.6} />}
+            {featured[2] && <FloatingCard className="left-10 bottom-10" product={featured[2]} delay={1.2} />}
           </motion.div>
         </div>
 

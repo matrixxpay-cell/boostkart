@@ -17,7 +17,8 @@ import {
 import Icon from '../components/Icon.jsx'
 import Reveal from '../components/Reveal.jsx'
 import ProductCard from '../components/ProductCard.jsx'
-import { getProduct, products, formatUSD } from '../data/products.js'
+import { formatUSD } from '../data/products.js'
+import { useProducts } from '../context/ProductsContext.jsx'
 import { useCart } from '../context/CartContext.jsx'
 
 const sampleReviews = [
@@ -29,6 +30,7 @@ const sampleReviews = [
 export default function ProductDetails() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { products, getProduct } = useProducts()
   const product = getProduct(id)
   const { addItem } = useCart()
   const [durationIdx, setDurationIdx] = useState(0)

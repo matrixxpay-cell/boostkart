@@ -1,9 +1,16 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Search, CheckCircle2, Clock, XCircle, ShieldCheck, ArrowRight, Mail, MessageCircle } from 'lucide-react'
+import { Search, CheckCircle2, Clock, XCircle, ShieldCheck, ArrowRight, Mail, MessageCircle, Key, Copy, Check, Download, ExternalLink } from 'lucide-react'
 import Reveal from '../components/Reveal.jsx'
 import { formatUSD } from '../data/products.js'
+
+const DELIVERY_LABEL = {
+  serial: 'Serial / License key',
+  account: 'Account login',
+  download: 'Download link',
+  manual: 'Delivery details',
+}
 
 const STATUS = {
   pending: { label: 'Awaiting verification', icon: Clock, color: 'text-amber-300', bg: 'bg-amber-400/10 border-amber-400/20' },
@@ -147,13 +154,69 @@ function OrderResult({ order }) {
             ))}
           </ul>
         </div>
+        {order.delivery?.content && <DeliveryBox delivery={order.delivery} />}
+
+        {order.status === 'verified' && !order.delivery?.content && (
+          <p className="rounded-lg border border-emerald-400/20 bg-emerald-400/5 p-3 text-xs text-emerald-200/90">
+            Verified & delivered. Check the email on this order (including spam) for your product details.
+          </p>
+        )}
         {order.status === 'pending' && (
           <p className="rounded-lg border border-amber-400/20 bg-amber-400/5 p-3 text-xs text-amber-200/90">
             Your payment is in the verification queue. This page updates once our team confirms it.
           </p>
         )}
+        {order.status === 'confirming' && (
+          <p className="rounded-lg border border-sky-400/20 bg-sky-400/5 p-3 text-xs text-sky-200/90">
+            Waiting for on-chain confirmations. Your order delivers automatically once confirmed.
+          </p>
+        )}
       </div>
     </motion.div>
+  )
+}
+
+function DeliveryBox({ delivery }) {
+  const [copied, setCopied] = useState(false)
+  const isLink = delivery.type === 'download'
+
+  function copy() {
+    navigator.clipboard?.writeText(delivery.content)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
+
+  return (
+    <div className="rounded-2xl border border-emerald-400/30 bg-emerald-400/[0.06] p-4">
+      <div className="flex items-center justify-between">
+        <span className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-300">
+          <Key className="h-4 w-4" /> Your delivery — {DELIVERY_LABEL[delivery.type] || 'Details'}
+        </span>
+        {!isLink && (
+          <button onClick={copy} className="inline-flex items-center gap-1 rounded-lg bg-white/5 px-2.5 py-1 text-xs font-semibold text-slate-200 hover:bg-white/10">
+            {copied ? <><Check className="h-3.5 w-3.5 text-emerald-400" /> Copied</> : <><Copy className="h-3.5 w-3.5" /> Copy</>}
+          </button>
+        )}
+      </div>
+
+      {isLink ? (
+        <a
+          href={delivery.content}
+          target="_blank"
+          rel="noreferrer"
+          className="btn-primary mt-3 w-full"
+        >
+          <Download className="h-4 w-4" /> Download your file <ExternalLink className="h-3.5 w-3.5" />
+        </a>
+      ) : (
+        <pre className="mt-3 overflow-x-auto whitespace-pre-wrap break-words rounded-lg border border-white/10 bg-nebula-bg/60 p-3 font-mono text-sm text-emerald-100">
+{delivery.content}
+        </pre>
+      )}
+      {delivery.deliveredAt && (
+        <p className="mt-2 text-[11px] text-slate-500">Delivered {new Date(delivery.deliveredAt).toLocaleString()}</p>
+      )}
+    </div>
   )
 }
 
